@@ -41,6 +41,7 @@ int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
         int thread_sum = 0;
         for (int i = 0; i < (mat_flip->rows); i++) {
           __m256i thread_sum_vec = _mm256_set1_epi32(0);
+          /*
           for (int j = c; j < (col_flip-col_flip%64) + c; j+= 64) {
               __m256i flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + (j-c) + (col_b*i)));
               __m256i a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + j + (col_a*(i+r))));
@@ -117,15 +118,16 @@ int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
             thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec2);
           }
           j = col_flip-col_flip%16 + c;
-          for (; j < (col_flip-col_flip%8)+c; j+= 8) {
+          */
+          for (int j=c; j < (col_flip-col_flip%8)+c; j+= 8) {
             __m256i flip_vec1 = _mm256_loadu_si256((__m256i *) (mat_data_flip + (j-c) + (col_b*i)));
             __m256i a_vec1 = _mm256_loadu_si256((__m256i *) (mat_data_a + j + (col_a*(i+r))));
             __m256i mul_vec1 = _mm256_mullo_epi32(flip_vec1, a_vec1);
             thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec1);
           }
-          j = col_flip-col_flip%8 + c;
+          int j = col_flip-col_flip%8 + c;
           for(; j < (col_flip)+c; j++) {
-            thread_sum += a_matrix->data[j + (col_a*(i+r))]*mat_flip->data[j-c + (col_b*i)];
+            thread_sum += (a_matrix->data[j + (col_a*(i+r))])*(mat_flip->data[j-c + (col_b*i)]);
           }
           int int_thread_sum[8];
           _mm256_storeu_si256((__m256i *) int_thread_sum, thread_sum_vec);
