@@ -2,10 +2,46 @@
 
 // Computes the convolution of two matrices
 int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
-  // TODO: convolve matrix a and matrix b, and store the resulting matrix in
-  // output_matrix
+  
+  //get output mat
+  *output_matrix = malloc(sizeof(matrix_t));
+  int num_output_rows = (a_matrix -> rows) - (b_matrix -> rows) + 1;
+  (*output_matrix)->rows = num_output_rows;
+  int num_output_cols = (a_matrix -> cols) - (b_matrix -> cols) + 1;
+  (*output_matrix)->cols = num_output_cols;
+  (*output_matrix)->data = malloc(sizeof(int32_t) * num_output_rows * num_output_cols);
+  
+  
 
-  return -1;
+  //get flip b mat
+  matrix_t* flip_b_matrix = malloc(sizeof(matrix_t));
+  int flip_b_matrix_cols = b_matrix->cols;
+  flip_b_matrix->cols = flip_b_matrix_cols;
+  int flip_b_matrix_rows = b_matrix->rows;
+  flip_b_matrix->rows = flip_b_matrix_rows;
+  
+  int flip_b_matrix_size = b_matrix->rows * b_matrix->cols;
+  flip_b_matrix->data = malloc(sizeof(int32_t) * flip_b_matrix_size);
+  // init flip mat
+  for(int i = 0; i < flip_b_matrix_size; i++) {
+    flip_b_matrix->data[i] = b_matrix->data[flip_b_matrix_size - 1 - i];
+  }
+
+  //convolve
+  for (int r = 0; r < num_output_rows; r ++) {
+    for (int c = 0; c < num_output_cols; c ++) {
+        uint32_t col_a = a_matrix -> cols;
+        uint32_t col_b = b_matrix -> cols;
+        int sum = 0;
+        for (int i = 0; i < flip_b_matrix_size; i++) {
+                int cov_row = (i)/(col_b); 
+                int j = (cov_row + r)*(col_a);
+                sum += a_matrix->data[j + (i%col_b) + c]*flip_b_matrix->data[i];
+            }
+        (*output_matrix)->data[c + r*num_output_cols] = sum;
+      }
+  }
+  return 0;
 }
 
 // Executes a task

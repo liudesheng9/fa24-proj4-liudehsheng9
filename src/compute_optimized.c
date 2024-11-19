@@ -5,11 +5,99 @@
 
 // Computes the convolution of two matrices
 int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
-  // TODO: convolve matrix a and matrix b, and store the resulting matrix in
-  // output_matrix
+  //get output mat
+  *output_matrix = malloc(sizeof(matrix_t));
+  int num_output_rows = (a_matrix -> rows) - (b_matrix -> rows) + 1;
+  (*output_matrix)->rows = num_output_rows;
+  int num_output_cols = (a_matrix -> cols) - (b_matrix -> cols) + 1;
+  (*output_matrix)->cols = num_output_cols;
+  (*output_matrix)->data = malloc(sizeof(int32_t) * num_output_rows * num_output_cols);
+  
+  
 
-  return -1;
+  //get flip b mat
+  matrix_t* flip_b_matrix = malloc(sizeof(matrix_t));
+  int flip_b_matrix_cols = b_matrix->cols;
+  flip_b_matrix->cols = flip_b_matrix_cols;
+  int flip_b_matrix_rows = b_matrix->rows;
+  flip_b_matrix->rows = flip_b_matrix_rows;
+  
+  int flip_b_matrix_size = b_matrix->rows * b_matrix->cols;
+  flip_b_matrix->data = malloc(sizeof(int32_t) * flip_b_matrix_size);
+
+  #pragma omp parallel for
+  for(int i = 0; i < flip_b_matrix_rows; i++) {
+    flip_b_matrix->data[i] = b_matrix->data[flip_b_matrix_size - 1 - i];
+  }
+
+  int32_t*data_flip  = flip_b_matrix->data;
+  int32_t*data_a = a_matrix->data;
+  int col_a = a_matrix->cols;
+  int col_b = b_matrix->cols;
+  int col_flip = flip_b_matrix->cols;
+  int row_b = b_matrix->rows;
+  int row_a = a_matrix->rows;
+
+  #pragma omp parallel for collapse(2)
+  for (int r = 0; r < num_output_rows; r ++) {
+    for (int c = 0; c < num_output_cols; c ++) {
+        int sum = 0;
+        __m256i sum_vec = _mm256_set1_epi32(0);
+        __m256i flip_vec;
+        __m256i a_vec;
+        __m256i mul_vec;
+        int j = (col_flip-col_flip%8) + c;
+        for (int i = r; i < (row_b + r); i++) {            
+            for (j = c; j < (col_b-col_b%32) + c; j+= 32) {
+                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + (j-c) + (col_b*(i-r))));
+                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + j + (col_a*i)));
+                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
+                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+
+                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + 8 + (j-c) + (col_b*(i-r))));
+                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + 8 + j + (col_a*i)));
+                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
+                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+                
+                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + 16 + (j-c) + (col_b*(i-r))));
+                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + 16 + j + (col_a*i)));
+                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
+                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+
+                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + 24 + (j-c) + (col_b*(i-r))));
+                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + 24 + j + (col_a*i)));
+                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
+                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+
+            }
+
+            for (; j < (col_b-col_b%8) + c; j+= 8) {
+                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + (j-c) + (col_b*(i-r))));
+                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + j + (col_a*i)));
+                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
+                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+            } 
+            for(; j < col_b + c; j++) {
+                sum += *(data_a + j + (col_a*i))* *(data_flip + (j-c) + (col_b*(i-r)));
+            }
+
+        }
+
+        if(j > c) { 
+            int sum_int_arr[8];
+            _mm256_storeu_si256((__m256i *) sum_int_arr, sum_vec);
+            for (int i = 0; i < 8; i++) {
+                sum += sum_int_arr[i];
+            }
+        }
+
+        (*output_matrix)->data[c + r*num_output_cols] = sum;
+      }
+  }
+
+  return 0;
 }
+
 
 // Executes a task
 int execute_task(task_t *task) {
