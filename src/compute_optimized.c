@@ -5,6 +5,7 @@
 
 // Computes the convolution of two matrices
 int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
+
   //get output mat
   *output_matrix = malloc(sizeof(matrix_t));
   int num_output_rows = (a_matrix -> rows) - (b_matrix -> rows) + 1;
@@ -12,106 +13,130 @@ int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
   int num_output_cols = (a_matrix -> cols) - (b_matrix -> cols) + 1;
   (*output_matrix)->cols = num_output_cols;
   (*output_matrix)->data = malloc(sizeof(int32_t) * num_output_rows * num_output_cols);
-  
-  
 
-  //get flip b mat
-  matrix_t* flip_b_matrix = malloc(sizeof(matrix_t));
-  int flip_b_matrix_cols = b_matrix->cols;
-  flip_b_matrix->cols = flip_b_matrix_cols;
-  int flip_b_matrix_rows = b_matrix->rows;
-  flip_b_matrix->rows = flip_b_matrix_rows;
-  
-  int flip_b_matrix_size = b_matrix->rows * b_matrix->cols;
-  flip_b_matrix->data = malloc(sizeof(int32_t) * flip_b_matrix_size);
+
+  //create and fill mat_flip, which is a flipped version of b
+  matrix_t* mat_flip = malloc(sizeof(matrix_t));
+  mat_flip->rows = b_matrix->rows;
+  mat_flip->cols = b_matrix->cols;
+  int mat_flip_size = b_matrix->rows * b_matrix->cols;
+  mat_flip->data = malloc(sizeof(int32_t) * mat_flip_size);
 
   #pragma omp parallel for
-  for(int i = 0; i < flip_b_matrix_rows; i++) {
-    flip_b_matrix->data[i] = b_matrix->data[flip_b_matrix_size - 1 - i];
+  for(int i = 0; i < mat_flip_size; i++) {
+    mat_flip->data[i] = b_matrix->data[mat_flip_size - 1 - i];
   }
-
-  int32_t*data_flip  = flip_b_matrix->data;
-  int32_t*data_a = a_matrix->data;
-  int col_a = a_matrix->cols;
-  int col_b = b_matrix->cols;
-  int col_flip = flip_b_matrix->cols;
-  int row_b = b_matrix->rows;
-  int row_a = a_matrix->rows;
+  
+  //set var
+  uint32_t col_a = a_matrix -> cols;
+  uint32_t col_b = b_matrix -> cols;
+  uint32_t col_flip = mat_flip -> cols;
+  int32_t* mat_data_flip = mat_flip->data;
+  int32_t* mat_data_a = a_matrix->data;
 
   //convolve
   #pragma omp parallel for collapse(2)
   for (int r = 0; r < num_output_rows; r ++) {
     for (int c = 0; c < num_output_cols; c ++) {
-        uint32_t col_a = a_matrix -> cols;
-        uint32_t col_b = b_matrix -> cols;
-        int sum = 0;
-        for (int i = 0; i < flip_b_matrix_size; i++) {
-                int cov_row = (i)/(col_b); 
-                int j = (cov_row + r)*(col_a);
-                sum += a_matrix->data[j + (i%col_b) + c]*flip_b_matrix->data[i];
-            }
-        (*output_matrix)->data[c + r*num_output_cols] = sum;
-      }
-  }
-  return 0;
-/*
-  #pragma omp parallel for collapse(2)
-  for (int r = 0; r < num_output_rows; r ++) {
-    for (int c = 0; c < num_output_cols; c ++) {
-        int sum = 0;
-        __m256i sum_vec = _mm256_set1_epi32(0);
-        __m256i flip_vec;
-        __m256i a_vec;
-        __m256i mul_vec;
-        int j = (col_flip-col_flip%8) + c;
-        for (int i = r; i < (row_b + r); i++) { 
-          if(j > c) {          
-            for (j = c; j < (col_b-col_b%32) + c; j+= 32) {
-                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + (j-c) + (col_b*(i-r))));
-                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + j + (col_a*i)));
-                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
-                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+        int thread_sum = 0;
+        for (int i = 0; i < (mat_flip->rows); i++) {
+          __m256i thread_sum_vec = _mm256_set1_epi32(0);
+          for (int j = c; j < (col_flip-col_flip%64) + c; j+= 64) {
+              __m256i flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + (j-c) + (col_b*i)));
+              __m256i a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + j + (col_a*(i+r))));
+              __m256i mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
 
-                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + 8 + (j-c) + (col_b*(i-r))));
-                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + 8 + j + (col_a*i)));
-                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
-                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
-                
-                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + 16 + (j-c) + (col_b*(i-r))));
-                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + 16 + j + (col_a*i)));
-                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
-                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 8 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 8 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
+              
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 16 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 16 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
 
-                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + 24 + (j-c) + (col_b*(i-r))));
-                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + 24 + j + (col_a*i)));
-                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
-                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 24 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 24 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
 
-            }
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 32 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 32 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
+              
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 40 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 40 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
 
-            for (; j < (col_b-col_b%8) + c; j+= 8) {
-                flip_vec = _mm256_loadu_si256( (__m256i *) (data_flip + (j-c) + (col_b*(i-r))));
-                a_vec = _mm256_loadu_si256( (__m256i *) (data_a + j + (col_a*i)));
-                mul_vec = _mm256_mullo_epi32(flip_vec, a_vec);
-                sum_vec = _mm256_add_epi32(sum_vec, mul_vec);
-            }
-            int sum_int_arr[8];
-            _mm256_storeu_si256((__m256i *) sum_int_arr, sum_vec);
-            for (int k = 0; k < 8; k++) {
-                sum += sum_int_arr[k];
-            }
-            
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 48 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 48 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
+
+              flip_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 56 + (j-c) + (col_b*i)));
+              a_vec8 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 56 + j + (col_a*(i+r))));
+              mul_vec8 = _mm256_mullo_epi32(flip_vec8, a_vec8);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec8);
           }
-          for(; j < col_b + c; j++) {
-                sum += *(data_a + j + (col_a*i))* *(data_flip + (j-c) + (col_b*(i-r)));
-            }
+          int j = col_flip-col_flip%64 + c;
+          for (int j = c; j < (col_flip-col_flip%32)+c; j+= 32) {
+              __m256i flip_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + (j-c) + (col_b*i)));
+              __m256i a_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_a + j + (col_a*(i+r))));
+              __m256i mul_vec4 = _mm256_mullo_epi32(flip_vec4, a_vec4);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec4);
+
+              flip_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 8 + (j-c) + (col_b*i)));
+              a_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 8 + j + (col_a*(i+r))));
+              mul_vec4 = _mm256_mullo_epi32(flip_vec4, a_vec4);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec4);
+              
+              flip_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 16 + (j-c) + (col_b*i)));
+              a_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 16 + j + (col_a*(i+r))));
+              mul_vec4 = _mm256_mullo_epi32(flip_vec4, a_vec4);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec4);
+
+              flip_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 24 + (j-c) + (col_b*i)));
+              a_vec4 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 24 + j + (col_a*(i+r))));
+              mul_vec4 = _mm256_mullo_epi32(flip_vec4, a_vec4);
+              thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec4);
+          }
+          j = col_flip-col_flip%32 + c;
+          for (; j < (col_flip-col_flip%16)+c; j+= 16) {
+            __m256i flip_vec2 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + (j-c) + (col_b*i)));
+            __m256i a_vec2 = _mm256_loadu_si256( (__m256i *) (mat_data_a + j + (col_a*(i+r))));
+            __m256i mul_vec2 = _mm256_mullo_epi32(flip_vec2, a_vec2);
+            thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec2);
+
+            flip_vec2 = _mm256_loadu_si256( (__m256i *) (mat_data_flip + 8 + (j-c) + (col_b*i)));
+            a_vec2 = _mm256_loadu_si256( (__m256i *) (mat_data_a + 8 + j + (col_a*(i+r))));
+            mul_vec2 = _mm256_mullo_epi32(flip_vec2, a_vec2);
+            thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec2);
+          }
+          j = col_flip-col_flip%16 + c;
+          for (; j < (col_flip-col_flip%8)+c; j+= 8) {
+            __m256i flip_vec1 = _mm256_loadu_si256((__m256i *) (mat_data_flip + (j-c) + (col_b*i)));
+            __m256i a_vec1 = _mm256_loadu_si256((__m256i *) (mat_data_a + j + (col_a*(i+r))));
+            __m256i mul_vec1 = _mm256_mullo_epi32(flip_vec1, a_vec1);
+            thread_sum_vec = _mm256_add_epi32(thread_sum_vec, mul_vec1);
+          }
+          j = col_flip-col_flip%8 + c;
+          for(; j < (col_flip)+c; j++) {
+            thread_sum += a_matrix->data[j + (col_a*(i+r))]*mat_flip->data[j-c + (col_b*i)];
+          }
+          int int_thread_sum[8];
+          _mm256_storeu_si256((__m256i *) int_thread_sum, thread_sum_vec);
+          thread_sum += int_thread_sum[0] + int_thread_sum[1] + int_thread_sum[2] + int_thread_sum[3] + int_thread_sum[4] + int_thread_sum[5] + int_thread_sum[6] + int_thread_sum[7];
+          
         }
-      (*output_matrix)->data[c + r*num_output_cols] = sum;
+        (*output_matrix)->data[c + r*num_output_cols] = thread_sum;
       }
   }
-
   return 0;
-*/
+
 }
 
 
