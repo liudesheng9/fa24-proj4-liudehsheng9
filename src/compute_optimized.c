@@ -38,6 +38,23 @@ int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
   int row_b = b_matrix->rows;
   int row_a = a_matrix->rows;
 
+  //convolve
+  #pragma omp parallel for collapse(2)
+  for (int r = 0; r < num_output_rows; r ++) {
+    for (int c = 0; c < num_output_cols; c ++) {
+        uint32_t col_a = a_matrix -> cols;
+        uint32_t col_b = b_matrix -> cols;
+        int sum = 0;
+        for (int i = 0; i < flip_b_matrix_size; i++) {
+                int cov_row = (i)/(col_b); 
+                int j = (cov_row + r)*(col_a);
+                sum += a_matrix->data[j + (i%col_b) + c]*flip_b_matrix->data[i];
+            }
+        (*output_matrix)->data[c + r*num_output_cols] = sum;
+      }
+  }
+  return 0;
+/*
   #pragma omp parallel for collapse(2)
   for (int r = 0; r < num_output_rows; r ++) {
     for (int c = 0; c < num_output_cols; c ++) {
@@ -94,6 +111,7 @@ int convolve(matrix_t *a_matrix, matrix_t *b_matrix, matrix_t **output_matrix) {
   }
 
   return 0;
+*/
 }
 
 
